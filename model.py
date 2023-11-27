@@ -145,65 +145,70 @@ class Data(Dataset):
 
 
 class residual_block(nn.Module):
-    """残差网络
-    """
-
-    def __init__(self, channel, dropout=False, normalize=False, dropout_p=0.2):
+    def __init__(self, channel, normalize=False, dropout=False, 
+                 p=0.2, residual_connection=True):
         super(residual_block, self).__init__()
+        
         self.normalize = normalize
-
+        self.dropout = dropout
+        self.residual_connection = residual_connection
+        
         self.cov1 = nn.Conv2d(channel, channel, 3, 1, 1)
         self.cov2 = nn.Conv2d(channel, channel, 3, 1, 1)
+        self.relu = nn.ReLU()
+
 
         if normalize:
             self.nor1 = nn.BatchNorm2d(channel)
             self.nor2 = nn.BatchNorm2d(channel)
-        self.relu = nn.ReLU()
-        self.dropout = dropout
+
         if dropout:
-            self.drop = nn.Dropout(p=dropout_p)
+            self.drop = nn.Dropout(p=p)
 
-    def forward(self, x):
-        x_ = self.cov1(x)
-        if self.normalize:
-            x_ = self.nor1(x_)
-        x_ = self.relu(x_)
+    def forward(self, X):
+        Y = self.cov1(X)
 
-        x_ = self.cov2(x_)
         if self.normalize:
-            x_ = self.nor2(x_)
-        x_ = self.relu(x_)
+            Y = self.relu(self.nor1(Y))
+            Y = self.cov2(Y)
+            Y = self.relu(self.nor2(Y))
+        else:
+            Y = self.relu(Y)
+            Y = self.cov2(Y)
+            Y = self.relu(Y)
 
         if self.dropout:
-            x_ = self.drop(x_)
+            Y = self.drop(Y)
 
-        x = x + x_
-        return x
+        if self.residual_connection:
+            Y = X + Y
+        
+        return Y
 
 
 class nor_cov(nn.Module):
-    """单层卷积网络
-    """
-
-    def __init__(self, in_channel, out_channel, dropout=False, normalize=False, dropout_p=0.2):
+    def __init__(self, in_channel, out_channel, 
+                 normalize=False, dropout=False, p=0.2):
         super(nor_cov, self).__init__()
 
-        self.cov = nn.Conv2d(in_channel, out_channel, 3, 1, 1)
-
         self.normalize = normalize
+        self.dropout = dropout
+
+        self.cov = nn.Conv2d(in_channel, out_channel, 3, 1, 1)
+        self.relu = nn.ReLU()
+        
         if normalize:
             self.nor = nn.BatchNorm2d(out_channel)
 
-        self.relu = nn.ReLU()
-        self.dropout = dropout
         if dropout:
-            self.drop = nn.Dropout(p=dropout_p)
+            self.drop = nn.Dropout(p=p)
 
     def forward(self, x):
         x = self.cov(x)
 
         if self.normalize:
-            x = self.nor(x)
+            x = self.nor(x) 
+
         x = self.relu(x)
 
         if self.dropout:
@@ -212,124 +217,21 @@ class nor_cov(nn.Module):
         return x
 
 
-class dou_cov(nn.Module):
-    """双层卷积网络
-    """
+def CNN_net(normalize=False, residual_connection=True, 
+            p=0.2, channels=[3, 64, 128], dropout=True):
+    blk = []
+    for i in range(len(channels)-1):
+        in_channel = channels[i]
+        out_channel = channels[i+1]
+        blk.append(nor_cov(in_channel, out_channel,
+                           normalize=normalize,
+                           dropout=dropout, p=p))
+        blk.append(residual_block(channel=out_channel,
+                                  normalize=normalize,
+                                  dropout=dropout, p=p,
+                                  residual_connection=residual_connection))
+        blk.append(nn.MaxPool2d(2,2))
 
-    def __init__(self, channel, dropout=False, normalize=False, dropout_p=0.2):
-        super(dou_cov, self).__init__()
-        self.cov1 = nor_cov(in_channel=channel, out_channel=channel, dropout=dropout, normalize=normalize, dropout_p=dropout_p)
-        self.cov2 = nor_cov(in_channel=channel, out_channel=channel, dropout=dropout, normalize=normalize, dropout_p=dropout_p)
-
-    def forward(self, x):
-        x = self.cov1(x)
-        x = self.cov2(x)
-        return x
-
-
-class CNN_net(nn.Module):
-    """自定义卷积网络
-    """
-
-    def __init__(self, normalize=False, dropout_p=0.2):
-        super(CNN_net, self).__init__()
-
-        self.cov1 = nor_cov(in_channel=3, out_channel=64, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov1 = dou_cov(channel=64, dropout=True, normalize=True)
-        # self.dou_cov2 = dou_cov(channel=64, dropout=True, normalize=True)
-        # self.res1 = residual_block(64, dropout=False)
-        self.res2 = residual_block(64, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool1 = nn.MaxPool2d(2, 2)
-
-        self.cov2 = nor_cov(in_channel=64, out_channel=128, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov3 = dou_cov(channel=128, dropout=True, normalize=True)
-        # self.dou_cov4 = dou_cov(channel=128, dropout=True, normalize=True)
-        # self.res3 = residual_block(128, dropout=False)
-        self.res4 = residual_block(128, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool2 = nn.MaxPool2d(2, 2)
-
-        self.cov3 = nor_cov(in_channel=128, out_channel=256, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov5 = dou_cov(channel=256, dropout=True, normalize=True)
-        # self.dou_cov6 = dou_cov(channel=256, dropout=True, normalize=True)
-        # self.res5 = residual_block(256, dropout=False)
-        self.res6 = residual_block(256, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool3 = nn.MaxPool2d(2, 2)
-
-        self.cov4 = nor_cov(in_channel=256, out_channel=512, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov7 = dou_cov(channel=512, dropout=True, normalize=True)
-        # self.dou_cov8 = dou_cov(channel=512, dropout=True, normalize=True)
-        # self.res7 = residual_block(512, dropout=False)
-        self.res8 = residual_block(512, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool4 = nn.MaxPool2d(2, 2)
-
-        self.cov5 = nor_cov(in_channel=512, out_channel=256, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov9 = dou_cov(channel=512, dropout=True, normalize=True)
-        # self.dou_cov10 = dou_cov(channel=256, dropout=True, normalize=True)
-        # self.res9 = residual_block(256, dropout=False)
-        self.res10 = residual_block(256, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool5 = nn.MaxPool2d(2, 2)
-
-        self.cov6 = nor_cov(in_channel=256, out_channel=128, dropout=True, normalize=normalize, dropout_p=dropout_p)
-        # self.dou_cov11 = dou_cov(channel=512, dropout=True, normalize=True)
-        # self.dou_cov12 = dou_cov(channel=128, dropout=True, normalize=True)
-        # self.res11 = residual_block(128, dropout=False)
-        self.res12 = residual_block(128, dropout=True, normalize=normalize, dropout_p=dropout_p)
-
-        self.pool6 = nn.MaxPool2d(2, 2)
-
-        self.fc1 = nn.Linear(128 * 1 * 1, 200)
-
-    def forward(self, x):
-        x = self.cov1(x)
-        # x = self.dou_cov1(x)
-        # x = self.dou_cov2(x)
-        # x = self.res1(x)
-        x = self.res2(x)
-        x = self.pool1(x)
-
-        x = self.cov2(x)
-        # x = self.dou_cov3(x)
-        # x = self.dou_cov4(x)
-        # x = self.res3(x)
-        x = self.res4(x)
-        x = self.pool2(x)
-
-        x = self.cov3(x)
-        # x = self.dou_cov5(x)
-        # x = self.dou_cov6(x)
-        # x = self.res5(x)
-        x = self.res6(x)
-        x = self.pool3(x)
-
-        x = self.cov4(x)
-        # x = self.dou_cov7(x)
-        # x = self.dou_cov8(x)
-        # x = self.res7(x)
-        x = self.res8(x)
-        x = self.pool4(x)
-
-        x = self.cov5(x)
-        # x = self.dou_cov9(x)
-        # x = self.dou_cov10(x)
-        # x = self.res9(x)
-        x = self.res10(x)
-        x = self.pool5(x)
-
-        x = self.cov6(x)
-        # x = self.dou_cov11(x)
-        # x = self.dou_cov12(x)
-        # x = self.res11(x)
-        x = self.res12(x)
-        x = self.pool6(x)
-
-        x = x.reshape(x.shape[0], -1)
-
-        x = self.fc1(x)
-
-        return x
-
+    net = nn.Sequential(*blk, nn.AdaptiveAvgPool2d((1,1)), 
+                        nn.Flatten(), nn.Linear(channels[-1], 200))
+    return net

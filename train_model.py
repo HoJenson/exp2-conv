@@ -9,7 +9,7 @@ from torchvision import transforms
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, random_split
 
-from model_ import Data, CNN_net
+from model import Data, CNN_net
 
 class Lab2Model(object):
 
@@ -22,22 +22,21 @@ class Lab2Model(object):
         # 从训练数据中手动划分训练集和验证集
         self.train_dataset, self.val_dataset = random_split(train_dataset,
                                                             [int(len(train_dataset) * 0.8),
-                                                             len(train_dataset) - int(len(train_dataset) * 0.8)],
+                                                                len(train_dataset) - int(len(train_dataset) * 0.8)],
                                                             generator=torch.Generator().manual_seed(0))
 
+        self.train_dataloader = DataLoader(dataset=self.train_dataset,
+                                            batch_size=batch_size,
+                                            shuffle=True,
+                                            num_workers=num_workers,
+                                            drop_last=True)
+        self.val_dataloader = DataLoader(dataset=self.val_dataset,
+                                            batch_size=batch_size,
+                                            shuffle=False,
+                                            num_workers=num_workers,
+                                            drop_last=True)
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.train_dataloader = DataLoader(dataset=self.train_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=True,
-                                           num_workers=num_workers,
-                                           drop_last=True)
-        self.val_dataloader = DataLoader(dataset=self.val_dataset,
-                                         batch_size=batch_size,
-                                         shuffle=False,
-                                         num_workers=num_workers,
-                                         drop_last=True)
-
         self.net = None
         self.lr = None
         self.optimizer = None
@@ -48,7 +47,7 @@ class Lab2Model(object):
         self.acc_list = {"train": [], "val": []}
 
     def train(self, lr=0.01, epochs=10, device="cuda", wait=8, lrd=False, fig_name="lab1",
-              p=0.2, residual_connection=True, channels=[3, 64, 128], normalize=True, dropout=True):
+              p=0.2, residual_connection=True, channels=[3, 64, 128], normalize=True, dropout=False):
         self.device = torch.device(device) if torch.cuda.is_available() else torch.device("cpu")
         self.lr = lr
         self.fig_name = fig_name
@@ -69,6 +68,7 @@ class Lab2Model(object):
         for epoch in range(epochs):
 
             # train train data
+            self.net.train()
             for data in tqdm(self.train_dataloader):
                 labels, inputs = data
                 inputs = inputs.to(self.device)
@@ -144,6 +144,7 @@ class Lab2Model(object):
                                       drop_last=False)
 
         test_acc = 0.0
+        self.net.eval()
         for data in test_data_loader:
             labels, inputs = data
             inputs = inputs.to(self.device)
