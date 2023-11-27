@@ -68,10 +68,18 @@ def CNN_net(channels=[64,128,256,512], normalize=True,
     blk.append(nn.Sequential(nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
                              nn.BatchNorm2d(64), nn.ReLU(),
                              nn.MaxPool2d(kernel_size=3, stride=2, padding=1)))
-    blk.append(nn.Sequential(*resnet_block(64, 64, 2, first_block=True)))
+    blk.append(nn.Sequential(*resnet_block(64, 64, 2, first_block=True,
+                                            normalize=normalize, dropout=dropout, 
+                                            p=p, residual_connection=residual_connection)))
     for i in range(len(channels)-1):
-        blk.append(nn.Sequential(*resnet_block(channels[i], channels[i+1], 2)))
+        blk.append(nn.Sequential(*resnet_block(channels[i], channels[i+1], 2,
+                                               normalize=normalize, dropout=dropout, 
+                                               p=p, residual_connection=residual_connection)))
 
-    net = nn.Sequential(*blk, nn.AdaptiveAvgPool2d(1,1), 
+    net = nn.Sequential(*blk, nn.AdaptiveAvgPool2d((1,1)), 
                         nn.Flatten(), nn.Linear(channels[-1], 200))
     return net
+
+def CNN_net(channels=[64,128,256,512], normalize=True, 
+            dropout=False, p=0.2, residual_connection=True):
+    blk = []
